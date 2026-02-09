@@ -1,0 +1,122 @@
+{
+  "id": "memory-memu",
+  "kind": "memory",
+  "uiHints": {
+    "anthropicToken": {
+      "label": "Anthropic OAuth Token",
+      "sensitive": true,
+      "placeholder": "sk-ant-oat01-...",
+      "help": "Claude subscription OAuth token"
+    },
+    "geminiApiKey": {
+      "label": "Gemini API Key",
+      "sensitive": true,
+      "placeholder": "AIza...",
+      "help": "Google Gemini API key for embeddings"
+    },
+    "autoCapture": {
+      "label": "Auto-Capture",
+      "help": "Automatically capture important information from conversations"
+    },
+    "autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Automatically inject relevant memories into context"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "anthropicToken": {
+        "type": "string",
+        "description": "Anthropic OAuth token for LLM"
+      },
+      "geminiApiKey": {
+        "type": "string",
+        "description": "Gemini API key for embeddings"
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "default": true
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "default": true
+      },
+      "pythonPath": {
+        "type": "string",
+        "default": "python3"
+      },
+      "memuPath": {
+        "type": "string",
+        "description": "Path to memU source"
+      },
+      "llmProvider": {
+        "type": "string",
+        "description": "LLM provider: anthropic, openai, or gemini",
+        "default": "anthropic"
+      },
+      "llmBaseUrl": {
+        "type": "string",
+        "description": "LLM API base URL"
+      },
+      "llmModel": {
+        "type": "string",
+        "description": "Chat model name"
+      },
+      "embedProvider": {
+        "type": "string",
+        "description": "Embedding provider: gemini or openai"
+      },
+      "embedBaseUrl": {
+        "type": "string",
+        "description": "Embedding API base URL"
+      },
+      "embedModel": {
+        "type": "string",
+        "description": "Embedding model name"
+      },
+      "routeIntention": {
+        "type": "boolean",
+        "description": "Judge if retrieval is needed and rewrite query",
+        "default": true
+      },
+      "sufficiencyCheck": {
+        "type": "boolean",
+        "description": "Check if search results are sufficient",
+        "default": true
+      },
+      "enableReinforcement": {
+        "type": "boolean",
+        "description": "Track repeated info with higher weight",
+        "default": true
+      },
+      "categoryAssignThreshold": {
+        "type": "number",
+        "description": "Auto-categorization similarity threshold (0-1)",
+        "default": 0.25
+      },
+      "rankingStrategy": {
+        "type": "string",
+        "description": "Retrieval ranking: similarity or salience",
+        "default": "salience"
+      },
+      "recencyDecayDays": {
+        "type": "number",
+        "description": "Half-life for recency decay in salience scoring",
+        "default": 30
+      },
+      "cleanupMaxAgeDays": {
+        "type": "number",
+        "description": "Delete unreinforced memories older than N days",
+        "default": 90
+      },
+      "cleanupIntervalHours": {
+        "type": "number",
+        "description": "Auto-cleanup interval in hours (0 = disabled)",
+        "default": 24
+      }
+    },
+    "required": ["anthropicToken", "geminiApiKey"]
+  }
+}

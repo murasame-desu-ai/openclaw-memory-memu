@@ -1,0 +1,21 @@
+{
+  "name": "memory-memu",
+  "version": "0.1.0",
+  "description": "OpenClaw memory plugin using memU (Anthropic LLM + Gemini embeddings)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}
