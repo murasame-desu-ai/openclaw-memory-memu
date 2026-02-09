@@ -63,8 +63,8 @@ Gemini `gemini-embedding-001` is a text-only embedding model. Images and other b
 - Visual details not captured in the description are lost
 - You cannot search by visual similarity (e.g. "find photos with similar colors")
 
-### No image storage
-The plugin stores **text descriptions** of images, not the images themselves. The original file must remain on disk for retrieval. If the file is moved or deleted, the memory entry becomes a dangling reference.
+### No image binary in DB
+The memU database stores **text descriptions** of images, not the image binary itself. The original file remains on disk where it was saved. If the source file is moved or deleted, the memory entry still exists as text but cannot be used to retrieve the actual image.
 
 ### Single embedding space
 All memories share one vector space with one embedding model. There is no separate space for different modalities or categories. This can cause cross-category noise in search results.
