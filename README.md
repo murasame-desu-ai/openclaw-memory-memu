@@ -55,6 +55,29 @@ For true multimodal vector search (image↔text in same space), you'd need a mul
 }
 ```
 
+## Limitations
+
+### Text-only embeddings
+Gemini `gemini-embedding-001` is a text-only embedding model. Images and other binary content cannot be embedded directly. Image memorization relies on a Vision LLM fallback that converts images to text descriptions first, which means:
+- Search accuracy depends on the quality of the generated description
+- Visual details not captured in the description are lost
+- You cannot search by visual similarity (e.g. "find photos with similar colors")
+
+### No image storage
+The plugin stores **text descriptions** of images, not the images themselves. The original file must remain on disk for retrieval. If the file is moved or deleted, the memory entry becomes a dangling reference.
+
+### Single embedding space
+All memories share one vector space with one embedding model. There is no separate space for different modalities or categories. This can cause cross-category noise in search results.
+
+### LLM-dependent summarization
+Auto-capture summarizes conversations via LLM before storing. This adds latency and cost per turn, and the summary quality depends on the model used (default: `claude-haiku-4-5`). Important nuances may be lost in summarization.
+
+### No deduplication across sessions
+The duplicate check uses vector similarity (>0.95), which may miss semantically similar but differently worded memories. Over time, near-duplicate entries can accumulate.
+
+### Gemini embedding quota
+Gemini free tier has daily embedding quota limits. Heavy usage (many memorize calls, large auto-capture volume) can exhaust the quota, causing all memory operations to fail until reset.
+
 ## License
 
 MIT
