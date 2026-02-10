@@ -35,12 +35,28 @@ For true multimodal vector search (image↔text in same space), you'd need a mul
 | `memory_categories` | List memory categories |
 | `memory_cleanup` | Remove old unreinforced memories |
 
+## Authentication
+
+### Anthropic Token Resolution
+
+The plugin automatically resolves the Anthropic API token in this order:
+
+1. **OpenClaw auth profiles** (recommended): Reads `~/.openclaw/agents/main/agent/auth-profiles.json` → uses the `lastGood.anthropic` profile's token
+2. **Any Anthropic profile**: Falls back to any profile starting with `anthropic:` in auth-profiles.json
+3. **Static config**: Uses the `anthropicToken` value from plugin config as final fallback
+
+This means if OpenClaw's built-in authentication is active, **you don't need to set `anthropicToken` manually** — the plugin will pick it up automatically.
+
+### Gemini API Key
+
+The `geminiApiKey` must be set explicitly in the plugin config. Get one from [Google AI Studio](https://aistudio.google.com/apikey).
+
 ## Config
 
 ```jsonc
 // openclaw.json → plugins.entries.memory-memu.config
 {
-  "anthropicToken": "sk-ant-...",   // Required: Anthropic API token
+  "anthropicToken": "sk-ant-...",   // Anthropic API token (auto-resolved from OpenClaw auth if omitted)
   "geminiApiKey": "AIza...",        // Required: Gemini API key for embeddings
   "autoCapture": true,              // Auto-capture from conversations
   "autoRecall": true,               // Auto-inject relevant memories
