@@ -65,7 +65,7 @@ interface MemuConfig {
   categoryAssignThreshold?: number;   // Auto-categorization threshold 0-1 (default: 0.25)
   // Memory maintenance
   cleanupMaxAgeDays?: number;         // Auto-cleanup: max age in days (default: 90)
-  cleanupIntervalHours?: number;      // Auto-cleanup interval in hours (default: 24, 0 = disabled)
+  cleanupIntervalHours?: number;      // Auto-cleanup interval in hours (default: 0 = disabled)
   // Salience ranking
   rankingStrategy?: string;           // "similarity" | "salience" (default: "salience")
   recencyDecayDays?: number;          // Half-life for recency decay (default: 30)
@@ -111,7 +111,7 @@ async function callMemu(
       ENABLE_REINFORCEMENT: String(config.enableReinforcement ?? true),
       CATEGORY_ASSIGN_THRESHOLD: String(config.categoryAssignThreshold ?? 0.25),
       CLEANUP_MAX_AGE_DAYS: String(config.cleanupMaxAgeDays ?? 90),
-      CLEANUP_INTERVAL_HOURS: String(config.cleanupIntervalHours ?? 24),
+      CLEANUP_INTERVAL_HOURS: String(config.cleanupIntervalHours ?? 0),
       RANKING_STRATEGY: config.rankingStrategy || "salience",
       RECENCY_DECAY_DAYS: String(config.recencyDecayDays ?? 30),
     };
@@ -358,7 +358,7 @@ const memuPlugin = {
         }
 
         // Periodic cleanup: remove old unreinforced memories
-        const cleanupIntervalMs = (cfg.cleanupIntervalHours ?? 24) * 60 * 60 * 1000;
+        const cleanupIntervalMs = (cfg.cleanupIntervalHours ?? 0) * 60 * 60 * 1000;
         try {
           const now = Date.now();
           if (cleanupIntervalMs > 0 && now - lastCleanupTime > cleanupIntervalMs) {
