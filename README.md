@@ -4,6 +4,61 @@ OpenClaw memory plugin using the [memU](https://github.com/murasame-desu-ai/memU
 
 Provides long-term memory for OpenClaw agents: auto-capture conversations, recall relevant context, and manage memories through agent tools.
 
+## Quick Start
+
+### 1. Install the forked memU
+
+> **Important:** The original memU does not support Anthropic/Gemini providers. You must use the fork.
+
+```bash
+git clone https://github.com/murasame-desu-ai/memU.git
+cd memU
+pip install -e .
+```
+
+### 2. Install the plugin
+
+```bash
+cd ~/.openclaw/extensions/
+git clone https://github.com/murasame-desu-ai/openclaw-memory-memu.git memory-memu
+cd memory-memu
+npm install
+npm run build
+```
+
+### 3. Add to OpenClaw config
+
+Add to `openclaw.json` → `plugins.entries`:
+
+```jsonc
+{
+  "memory-memu": {
+    "path": "~/.openclaw/extensions/memory-memu",
+    "config": {
+      "geminiApiKey": "AIza..."   // Required: get from https://aistudio.google.com/apikey
+      // anthropicToken is auto-resolved from OpenClaw auth — no manual setup needed
+    }
+  }
+}
+```
+
+### 4. Restart OpenClaw
+
+```bash
+openclaw gateway restart
+```
+
+That's it. The plugin will auto-capture conversations and auto-recall relevant memories.
+
+### Verify
+
+```bash
+# Direct wrapper test:
+cd ~/.openclaw/extensions/memory-memu
+ANTHROPIC_TOKEN="sk-ant-..." GEMINI_API_KEY="AIza..." \
+  python3 memu_wrapper.py list
+```
+
 ## How It Works
 
 ```
@@ -152,61 +207,6 @@ For true multimodal vector search, you'd need a multimodal embedding model like 
 ## Database
 
 Memories are stored in SQLite at `~/.openclaw/memory/memu.sqlite`.
-
-## Quick Start
-
-### 1. Install the forked memU
-
-> **Important:** The original memU does not support Anthropic/Gemini providers. You must use the fork.
-
-```bash
-git clone https://github.com/murasame-desu-ai/memU.git
-cd memU
-pip install -e .
-```
-
-### 2. Install the plugin
-
-```bash
-cd ~/.openclaw/extensions/
-git clone https://github.com/murasame-desu-ai/openclaw-memory-memu.git memory-memu
-cd memory-memu
-npm install
-npm run build
-```
-
-### 3. Add to OpenClaw config
-
-Add to `openclaw.json` → `plugins.entries`:
-
-```jsonc
-{
-  "memory-memu": {
-    "path": "~/.openclaw/extensions/memory-memu",
-    "config": {
-      "geminiApiKey": "AIza..."   // Required: get from https://aistudio.google.com/apikey
-      // anthropicToken is auto-resolved from OpenClaw auth — no manual setup needed
-    }
-  }
-}
-```
-
-### 4. Restart OpenClaw
-
-```bash
-openclaw gateway restart
-```
-
-That's it. The plugin will auto-capture conversations and auto-recall relevant memories.
-
-### Verify
-
-```bash
-# Direct wrapper test:
-cd ~/.openclaw/extensions/memory-memu
-ANTHROPIC_TOKEN="sk-ant-..." GEMINI_API_KEY="AIza..." \
-  python3 memu_wrapper.py list
-```
 
 ## Troubleshooting
 
