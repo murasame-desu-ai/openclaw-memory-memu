@@ -108,38 +108,114 @@ def get_service():
         )
     return _service
 
-async def summarize_conversation(content: str) -> str:
-    """Use LLM to summarize conversation into a concise memory."""
+async def judge_and_extract(content: str) -> dict:
+    """Use LLM to judge importance and extract structured memory info.
+    
+    Returns:
+        {"skip": True} if not worth remembering
+        {"skip": False, "summary": str, "type": str, "categories": list} if worth it
+    """
     service = get_service()
     llm = service._get_llm_client()
     
-    prompt = f"""Extract the most important information from the following conversation in a single concise sentence.
-Focus on: user identity, preferences, important facts, or notable events.
-Exclude metadata (timestamps, IDs). Keep only the essence.
+    prompt = f"""You are a memory filter for an AI assistant. Analyze this conversation and decide if it contains information worth remembering long-term.
+
+NOT worth remembering (respond SKIP):
+- Casual greetings, small talk, jokes without substance
+- System messages, tool outputs, status checks
+- Temporary states ("I'm cooking", "brb")
+- Heartbeat/health checks
+- Repetitive or trivial exchanges
+- Already-known information being restated
+
+WORTH remembering:
+- User identity, preferences, opinions
+- Important decisions or agreements
+- New facts about the user or their projects
+- Significant events or milestones
+- Technical discoveries or lessons learned
+- Relationship dynamics or emotional context
 
 Conversation:
 {content}
 
-Summary (one sentence):"""
+If NOT worth remembering, respond with exactly: SKIP
+If WORTH remembering, respond in this exact JSON format:
+{{"summary": "one concise sentence capturing the key info", "type": "one of: profile/preference/fact/event", "categories": ["one or more of: User Profile, Preferences, Facts, Events"]}}"""
     
-    summary = await llm.chat(prompt)
-    return summary.strip()
+    response = await llm.chat(prompt)
+    response = response.strip()
+    
+    if response.upper() == "SKIP" or response.upper().startswith("SKIP"):
+        return {"skip": True}
+    
+    try:
+        # Try to parse JSON (handle markdown code blocks)
+        cleaned = response
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        data = json.loads(cleaned)
+        return {
+            "skip": False,
+            "summary": data.get("summary", ""),
+            "type": data.get("type", "fact"),
+            "categories": data.get("categories", ["Facts"]),
+        }
+    except (json.JSONDecodeError, KeyError):
+        # If LLM returned non-JSON non-SKIP, treat as summary
+        if len(response) > 10:
+            return {"skip": False, "summary": response, "type": "fact", "categories": ["Facts"]}
+        return {"skip": True}
 
-async def store_memory(content: str, memory_type: str = "profile", categories: list[str] = None):
-    """Store a memory item with automatic summarization."""
+async def store_memory(content: str, memory_type: str = None, categories: list[str] = None, skip_judge: bool = False):
+    """Store a memory item with LLM-based importance judgment and dedup.
+    
+    If memory_type/categories not provided, LLM auto-classifies.
+    If skip_judge=True, stores directly (for manual tool calls).
+    """
     service = get_service()
-    categories = categories or ["Facts"]
     
-    # Summarize the conversation first
-    summary = await summarize_conversation(content)
+    # Step 1: Judge importance and extract info
+    if not skip_judge and memory_type is None:
+        judgment = await judge_and_extract(content)
+        if judgment.get("skip"):
+            return {"success": False, "skipped": True, "reason": "Not worth remembering"}
+        summary = judgment["summary"]
+        memory_type = judgment.get("type", "fact")
+        categories = judgment.get("categories", ["Facts"])
+    else:
+        # Direct store (from manual tool call) - just summarize
+        llm = service._get_llm_client()
+        prompt = f"Summarize in one concise sentence:\n{content}\n\nSummary:"
+        summary = (await llm.chat(prompt)).strip()
+        memory_type = memory_type or "fact"
+        categories = categories or ["Facts"]
     
-    # Skip if summary is empty or too short
     if len(summary) < 5:
         return {"success": False, "error": "No meaningful content to store"}
     
+    # Step 2: Dedup check - search for similar existing memories
+    try:
+        existing = await service.retrieve(
+            queries=[{"role": "user", "content": summary}],
+        )
+        for item in existing.get("items", [])[:3]:
+            existing_summary = item.get("summary", "")
+            # Simple overlap check: if >70% words match, skip
+            words_new = set(summary.lower().split())
+            words_old = set(existing_summary.lower().split())
+            if words_new and words_old:
+                overlap = len(words_new & words_old) / max(len(words_new), 1)
+                if overlap > 0.7:
+                    return {"success": False, "skipped": True, "reason": f"Duplicate of existing memory: {item.get('id')}"}
+    except Exception:
+        pass  # Dedup is best-effort
+    
+    # Step 3: Store
     result = await service.create_memory_item(
         memory_type=memory_type,
-        memory_content=summary,  # Store the summary, not raw content
+        memory_content=summary,
         memory_categories=categories,
     )
     
@@ -147,6 +223,8 @@ async def store_memory(content: str, memory_type: str = "profile", categories: l
         "success": True,
         "id": result.get("memory_item", {}).get("id"),
         "summary": summary,
+        "type": memory_type,
+        "categories": categories,
     }
 
 async def search_memory(query: str, limit: int = 3):

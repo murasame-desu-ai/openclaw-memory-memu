@@ -153,35 +153,21 @@ async function callMemu(
 }
 
 /**
- * Detect memory category from text content.
- */
-function detectCategory(text: string): string[] {
-  const lower = text.toLowerCase();
-  
-  if (lower.includes("이름") || lower.includes("name") || lower.includes("나는")) {
-    return ["User Profile"];
-  }
-  if (lower.includes("좋아") || lower.includes("선호") || lower.includes("prefer")) {
-    return ["Preferences"];
-  }
-  if (lower.includes("했") || lower.includes("갔") || lower.includes("만났")) {
-    return ["Events"];
-  }
-  return ["Facts"];
-}
-
-/**
- * Check if text is worth capturing as memory.
- * Minimal filtering - let memU's LLM decide what's important.
+ * Pre-filter before sending to LLM judgment.
+ * Cheap checks to avoid unnecessary LLM calls.
  */
 function shouldCapture(text: string): boolean {
-  // Skip very short text (10자 이상)
-  if (text.length < 10) return false;
+  if (text.length < 20) return false;
   
-  // Skip tool calls and code blocks
+  // Skip pure tool/code output
   if (text.startsWith("{") || text.startsWith("```")) return false;
   
-  // Let memU's LLM decide what's worth remembering
+  // Skip heartbeat-only exchanges
+  if (/^(User:.*HEARTBEAT.*\n?Assistant:.*HEARTBEAT_OK)/is.test(text)) return false;
+  
+  // Skip if only system/status messages
+  if (/^(User:.*GatewayRestart|User:.*\[MISSING\])/is.test(text)) return false;
+  
   return true;
 }
 
@@ -355,18 +341,17 @@ const memuPlugin = {
           }
 
           
-          // Send to memU
+          // Send to memU (LLM judges importance and classifies automatically)
           const result = await callMemu(cfg, "store", [
             JSON.stringify({
               content,
-              type: "event",
-              categories: ["Facts"],
             }),
           ]);
 
-          
-          if (result.success) {
-            api.logger.info?.(`memory-memu: captured conversation memory`);
+          if ((result as any).skipped) {
+            api.logger.info?.(`memory-memu: skipped - ${(result as any).reason}`);
+          } else if (result.success) {
+            api.logger.info?.(`memory-memu: captured [${(result as any).type}] ${(result as any).summary?.slice(0, 60)}`);
           }
         } catch (err) {
           api.logger.warn?.(`memory-memu: capture failed: ${String(err)}`);
