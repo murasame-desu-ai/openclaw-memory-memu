@@ -1,6 +1,6 @@
 # openclaw-memory-memu
 
-OpenClaw memory plugin using the [memU](https://github.com/NevaMind-AI/memU) framework.
+OpenClaw memory plugin using the [memU](https://github.com/murasame-desu-ai/memU) framework (fork with Anthropic/Gemini multi-provider support).
 
 Provides long-term memory for OpenClaw agents: auto-capture conversations, recall relevant context, and manage memories through agent tools.
 
@@ -153,6 +153,71 @@ For true multimodal vector search, you'd need a multimodal embedding model like 
 
 Memories are stored in SQLite at `~/.openclaw/memory/memu.sqlite`.
 
+## Quick Start
+
+### 1. Install the forked memU
+
+> **Important:** The original memU does not support Anthropic/Gemini providers. You must use the fork.
+
+```bash
+git clone https://github.com/murasame-desu-ai/memU.git
+cd memU
+pip install -e .
+```
+
+### 2. Install the plugin
+
+```bash
+cd ~/.openclaw/extensions/
+git clone https://github.com/murasame-desu-ai/openclaw-memory-memu.git memory-memu
+cd memory-memu
+npm install
+npm run build
+```
+
+### 3. Add to OpenClaw config
+
+Add to `openclaw.json` → `plugins.entries`:
+
+```jsonc
+{
+  "memory-memu": {
+    "path": "~/.openclaw/extensions/memory-memu",
+    "config": {
+      "geminiApiKey": "AIza..."   // Required: get from https://aistudio.google.com/apikey
+      // anthropicToken is auto-resolved from OpenClaw auth — no manual setup needed
+    }
+  }
+}
+```
+
+### 4. Restart OpenClaw
+
+```bash
+openclaw gateway restart
+```
+
+That's it. The plugin will auto-capture conversations and auto-recall relevant memories.
+
+### Verify
+
+```bash
+# Direct wrapper test:
+cd ~/.openclaw/extensions/memory-memu
+ANTHROPIC_TOKEN="sk-ant-..." GEMINI_API_KEY="AIza..." \
+  python3 memu_wrapper.py list
+```
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `ModuleNotFoundError: memu` | memU not installed or using original | Install the fork: `pip install -e .` |
+| `anthropic provider not found` | Using original memU | Switch to fork |
+| `GEMINI_API_KEY not set` | Missing Gemini key | Get one from [AI Studio](https://aistudio.google.com/apikey) |
+| Embedding quota exceeded | Gemini free tier daily limit | Wait for reset or upgrade to paid |
+| Token expired | OpenClaw auth expired | Re-auth with `openclaw auth` |
+
 ## Building
 
 ```bash
@@ -173,7 +238,7 @@ Build artifacts (`*.js`, `*.d.ts`) are gitignored. OpenClaw loads the TypeScript
 
 ## Requirements
 
-- Python 3.10+ with memU installed (`pip install memu` or local source via `memuPath`)
+- Python 3.13+ with [forked memU](https://github.com/murasame-desu-ai/memU) installed
 - Node.js / TypeScript (for building the plugin)
 - OpenClaw with plugin SDK
 
