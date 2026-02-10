@@ -197,22 +197,81 @@ Category summaries are generated automatically by memU's LLM as memories accumul
   // --- Retrieval Settings ---
   "routeIntention": true,           // LLM judges if retrieval is needed & rewrites query (default: true)
   "sufficiencyCheck": true,         // LLM checks if results are sufficient (default: true)
+  "recallTopK": 3,                  // Number of memories to retrieve per recall (default: 3)
   "rankingStrategy": "salience",    // "similarity" | "salience" (default: "salience")
   "recencyDecayDays": 30,           // Half-life for recency scoring in salience ranking (default: 30)
 
-  // --- Memorization Settings ---
+  // --- Capture Settings ---
+  "captureDetail": "medium",        // "low" | "medium" | "high" — how aggressively to capture (default: "medium")
   "enableReinforcement": true,      // Track repeated info with higher weight (default: true)
   "categoryAssignThreshold": 0.25,  // Auto-categorization confidence threshold 0-1 (default: 0.25)
 
   // --- Maintenance ---
   "cleanupMaxAgeDays": 90,          // Delete unreinforced memories older than N days (default: 90)
-  "cleanupIntervalHours": 24,       // How often to run cleanup, 0 = disabled (default: 24)
+  "cleanupIntervalHours": 0,        // How often to run cleanup, 0 = disabled (default: 0)
 
   // --- Advanced ---
   "pythonPath": "python3",          // Python interpreter path (default: python3)
   "memuPath": ""                    // Path to memU source, if not pip-installed
 }
 ```
+
+### Config Option Details
+
+#### Feature Toggles
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `autoCapture` | boolean | `true` | Automatically capture and store important information after each agent turn. When disabled, memories are only created via the `memory_memorize` tool. |
+| `autoRecall` | boolean | `true` | Automatically search and inject relevant memories before each agent turn. When disabled, the agent can still use `memory_list` to manually browse memories. |
+
+#### LLM Provider
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `llmProvider` | string | `"anthropic"` | Which LLM provider to use for summarization, importance judgment, and query rewriting. Options: `"anthropic"`, `"openai"`, `"gemini"`. |
+| `llmBaseUrl` | string | `""` | Custom API base URL. Leave empty to use the provider's default endpoint. Useful for proxies or self-hosted models. |
+| `llmModel` | string | `""` | Specific model name to use. Leave empty for provider defaults (see table below). |
+
+#### Embedding Provider
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `embedProvider` | string | `"gemini"` | Which provider to use for text embeddings. Options: `"gemini"`, `"openai"`. Gemini offers free-tier embeddings. |
+| `embedBaseUrl` | string | `""` | Custom embedding API URL. Leave empty for provider defaults. |
+| `embedModel` | string | `""` | Specific embedding model. Leave empty for defaults (see table below). |
+
+#### Retrieval Settings
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `routeIntention` | boolean | `true` | Before searching, an LLM judges whether retrieval is actually needed and rewrites the query for better results. Adds ~1s latency but improves relevance. **Disable if using slang/nicknames that the LLM misinterprets.** |
+| `sufficiencyCheck` | boolean | `true` | After retrieval, an LLM checks if the results are sufficient or if a follow-up search is needed. Adds latency but can improve recall quality. |
+| `recallTopK` | number | `3` | How many memory items to retrieve and inject per recall. Higher values provide more context but increase prompt token usage. Recommended: 3–5 for chat, 5–10 for complex tasks. |
+| `rankingStrategy` | string | `"salience"` | How to rank search results. `"similarity"`: pure vector cosine similarity. `"salience"`: combines similarity with recency decay and reinforcement count for time-aware ranking. |
+| `recencyDecayDays` | number | `30` | Half-life in days for recency scoring (only used with `"salience"` ranking). A value of 30 means a 30-day-old memory scores ~50% of a fresh one. Lower = prefer recent memories more aggressively. |
+
+#### Capture Settings
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `captureDetail` | string | `"medium"` | Controls how aggressively the LLM filter captures memories. **`"low"`**: Only critical identity info, major decisions, milestones. **`"medium"`**: Identity, preferences, projects, events, lessons learned. **`"high"`**: All of the above plus casual mentions revealing personality, group chat dynamics, small details like pet names, food preferences, recurring jokes. |
+| `enableReinforcement` | boolean | `true` | When storing a new memory, check if a similar one already exists (>0.95 cosine similarity). If so, increment its reinforcement count instead of creating a duplicate. Reinforced memories rank higher in salience search and resist cleanup. |
+| `categoryAssignThreshold` | number | `0.25` | Confidence threshold (0–1) for auto-assigning memories to categories. Lower = more memories get categorized; higher = only high-confidence assignments. |
+
+#### Maintenance
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `cleanupMaxAgeDays` | number | `90` | When cleanup runs, delete unreinforced memories older than this many days. Reinforced memories (repeated information) are never auto-deleted. |
+| `cleanupIntervalHours` | number | `0` | How often (in hours) to auto-run cleanup after agent turns. `0` = disabled (manual only via `memory_cleanup` tool). Set to `24` for daily cleanup. |
+
+#### Advanced
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `pythonPath` | string | `"python3"` | Path to Python interpreter. Change if using a virtualenv or specific Python version. |
+| `memuPath` | string | `""` | Path to memU source directory, if not installed via pip. The wrapper will add this to `PYTHONPATH`. |
 
 ### LLM Provider Defaults
 
