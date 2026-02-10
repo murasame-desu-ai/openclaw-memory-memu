@@ -44,16 +44,21 @@ npm run build
 
 Open your OpenClaw config file (typically `~/.openclaw/openclaw.json` or run `openclaw config path` to find it).
 
-Add the plugin entry under `plugins.entries`. **Do not replace your existing config** — merge this into your existing `plugins.entries` object:
+Add the plugin configuration. **Do not replace your existing config** — merge these sections into your existing config:
 
 ```jsonc
 {
   "plugins": {
+    // ⚠️ IMPORTANT: This line activates the plugin as the memory backend!
+    "slots": {
+      "memory": "memory-memu"
+    },
+    
     "entries": {
       // ... your existing plugins stay here ...
 
       "memory-memu": {
-        "path": "~/.openclaw/extensions/memory-memu",
+        "enabled": true,
         "config": {
           "geminiApiKey": "YOUR_GEMINI_API_KEY_HERE"
           // That's it! Anthropic token is auto-resolved from OpenClaw's own auth.
@@ -64,6 +69,8 @@ Add the plugin entry under `plugins.entries`. **Do not replace your existing con
   }
 }
 ```
+
+> **⚠️ Don't forget `plugins.slots.memory`!** Without this line, the plugin will be installed but not used as the memory backend.
 
 **Minimum required config is just `geminiApiKey`.** All other options have sensible defaults. See the [full Config reference](#config) below for advanced options.
 
