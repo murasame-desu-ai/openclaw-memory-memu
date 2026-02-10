@@ -1,39 +1,44 @@
 # openclaw-memory-memu
 
-OpenClaw memory plugin using [memU](https://github.com/MashiroSA/memu) framework.
+OpenClaw memory plugin using the [memU](https://github.com/NevaMind-AI/memU) framework.
 
-Anthropic Claude for LLM + Gemini for text embeddings.
+Provides long-term memory for OpenClaw agents: auto-capture conversations, recall relevant context, and manage memories through agent tools.
 
-## Features
+## How It Works
 
-- **Auto-capture**: Automatically extracts and stores important information from conversations
-- **Auto-recall**: Injects relevant memories into context before agent starts
-- **Semantic search**: Vector-based memory retrieval using Gemini embeddings
-- **Salience ranking**: Combines similarity, recency, and reinforcement for ranking
-- **Resource memorization**: Store text files, web pages, and images as memories
-- **Periodic cleanup**: Automatically removes old unreinforced memories
+```
+User message → [Auto-Recall] search memories → inject relevant context
+                                                    ↓
+Agent processes message with memory context → generates response
+                                                    ↓
+Agent turn ends → [Auto-Capture] summarize conversation → store memory
+```
 
-## Image Memorization
+### Auto-Recall (`before_agent_start`)
 
-Gemini embedding API (`gemini-embedding-001`) only accepts text input, so images go through a fallback pipeline:
+Before each agent turn, the plugin searches for memories related to the user's prompt and injects them as `<relevant-memories>` context. This gives the agent access to past conversations and facts without manual lookup.
 
-1. memU's `memorize()` pipeline attempts to process the image
-2. If the embedding API rejects it (400 error), the fallback kicks in:
-   - Claude Vision describes the image
-   - The text description + user-provided context is embedded and stored
-3. This means image search works via text descriptions, not raw pixel embeddings
+### Auto-Capture (`agent_end`)
 
-For true multimodal vector search (image↔text in same space), you'd need a multimodal embedding model like Vertex AI `multimodalembedding` or Cohere `embed-v4.0`.
+After each successful agent turn, the plugin extracts the current conversation turn (last user + assistant messages, with 2 messages of prior context), summarizes it via LLM, and stores it as a memory item.
 
-## Tools
+### Periodic Cleanup
 
-| Tool | Description |
-|------|-------------|
-| `memory_memorize` | Ingest a resource (file/URL/image) into memory |
-| `memory_list` | List recent memories |
-| `memory_delete` | Delete a specific memory by ID |
-| `memory_categories` | List memory categories |
-| `memory_cleanup` | Remove old unreinforced memories |
+On each `agent_end`, the plugin checks if enough time has passed since the last cleanup. If so, it removes old unreinforced memories automatically.
+
+## Architecture
+
+```
+index.ts (OpenClaw plugin)
+    ↓ subprocess
+memu_wrapper.py (Python bridge)
+    ↓ imports
+memU MemoryService (Python library)
+    ↓
+SQLite database (~/.openclaw/memory/memu.sqlite)
+```
+
+The TypeScript plugin communicates with the Python memU library via a subprocess wrapper (`memu_wrapper.py`). Each tool call or lifecycle hook spawns a Python process with the appropriate command and environment variables.
 
 ## Authentication
 
@@ -45,54 +50,132 @@ The plugin automatically resolves the Anthropic API token in this order:
 2. **Any Anthropic profile**: Falls back to any profile starting with `anthropic:` in auth-profiles.json
 3. **Static config**: Uses the `anthropicToken` value from plugin config as final fallback
 
-This means if OpenClaw's built-in authentication is active, **you don't need to set `anthropicToken` manually** — the plugin will pick it up automatically.
+This means if OpenClaw's built-in authentication is active, **the plugin picks up the token automatically** — no manual configuration needed.
 
 ### Gemini API Key
 
 The `geminiApiKey` must be set explicitly in the plugin config. Get one from [Google AI Studio](https://aistudio.google.com/apikey).
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `memory_memorize` | Ingest a resource (file/URL/image) through the full memU pipeline: ingest → extract → embed → store |
+| `memory_list` | List recent memories sorted by creation date (newest first) |
+| `memory_delete` | Delete a specific memory by UUID |
+| `memory_categories` | List all memory categories with descriptions and summaries |
+| `memory_cleanup` | Remove old unreinforced memories older than N days |
+
+## Memory Categories
+
+The plugin creates 4 default categories:
+
+| Category | Description |
+|----------|-------------|
+| User Profile | User information and identity |
+| Preferences | User preferences and settings |
+| Facts | Important facts and knowledge |
+| Events | Notable events and occurrences |
+
+Category summaries are generated automatically by memU's LLM as memories accumulate in each category.
 
 ## Config
 
 ```jsonc
 // openclaw.json → plugins.entries.memory-memu.config
 {
-  "anthropicToken": "sk-ant-...",   // Anthropic API token (auto-resolved from OpenClaw auth if omitted)
+  // --- Authentication ---
+  "anthropicToken": "sk-ant-...",   // Auto-resolved from OpenClaw auth if omitted
   "geminiApiKey": "AIza...",        // Required: Gemini API key for embeddings
-  "autoCapture": true,              // Auto-capture from conversations
-  "autoRecall": true,               // Auto-inject relevant memories
-  "llmProvider": "anthropic",       // LLM provider: anthropic | openai | gemini
-  "llmModel": "claude-haiku-4-5",  // Chat model for summarization
-  "embedProvider": "gemini",        // Embedding provider: gemini | openai
-  "embedModel": "gemini-embedding-001",
-  "rankingStrategy": "salience",    // similarity | salience
-  "recencyDecayDays": 30,           // Half-life for recency scoring
-  "cleanupMaxAgeDays": 90,          // Auto-cleanup threshold
-  "cleanupIntervalHours": 24        // Cleanup frequency (0 = disabled)
+
+  // --- Feature Toggles ---
+  "autoCapture": true,              // Auto-capture conversations (default: true)
+  "autoRecall": true,               // Auto-inject relevant memories (default: true)
+
+  // --- LLM Provider ---
+  "llmProvider": "anthropic",       // "anthropic" | "openai" | "gemini" (default: "anthropic")
+  "llmBaseUrl": "",                 // Custom API base URL (uses provider default if empty)
+  "llmModel": "",                   // Chat model (default: claude-haiku-4-5 for anthropic)
+
+  // --- Embedding Provider ---
+  "embedProvider": "gemini",        // "gemini" | "openai" (default: auto based on llmProvider)
+  "embedBaseUrl": "",               // Custom embedding API URL
+  "embedModel": "",                 // Embedding model (default: gemini-embedding-001)
+
+  // --- Retrieval Settings ---
+  "routeIntention": true,           // LLM judges if retrieval is needed & rewrites query (default: true)
+  "sufficiencyCheck": true,         // LLM checks if results are sufficient (default: true)
+  "rankingStrategy": "salience",    // "similarity" | "salience" (default: "salience")
+  "recencyDecayDays": 30,           // Half-life for recency scoring in salience ranking (default: 30)
+
+  // --- Memorization Settings ---
+  "enableReinforcement": true,      // Track repeated info with higher weight (default: true)
+  "categoryAssignThreshold": 0.25,  // Auto-categorization confidence threshold 0-1 (default: 0.25)
+
+  // --- Maintenance ---
+  "cleanupMaxAgeDays": 90,          // Delete unreinforced memories older than N days (default: 90)
+  "cleanupIntervalHours": 24,       // How often to run cleanup, 0 = disabled (default: 24)
+
+  // --- Advanced ---
+  "pythonPath": "python3",          // Python interpreter path (default: python3)
+  "memuPath": ""                    // Path to memU source, if not pip-installed
 }
 ```
 
+### LLM Provider Defaults
+
+| Provider | Base URL | Default Model | Backend |
+|----------|----------|---------------|---------|
+| `anthropic` | `https://api.anthropic.com` | `claude-haiku-4-5` | httpx |
+| `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` | sdk |
+| `gemini` | `https://generativelanguage.googleapis.com` | `gemini-2.0-flash` | httpx |
+
+### Embedding Provider Defaults
+
+| Provider | Base URL | Default Model |
+|----------|----------|---------------|
+| `gemini` | `https://generativelanguage.googleapis.com` | `gemini-embedding-001` |
+| `openai` | `https://api.openai.com/v1` | `text-embedding-3-small` |
+
+## Image Memorization
+
+Gemini's `gemini-embedding-001` only accepts text input. Images go through a fallback pipeline:
+
+1. memU's `memorize()` pipeline attempts to process the image
+2. If the embedding API rejects it (400 error), the fallback kicks in:
+   - Claude Vision describes the image
+   - The text description + user-provided context is embedded and stored
+3. Image search works via text descriptions, not raw pixel embeddings
+
+For true multimodal vector search, you'd need a multimodal embedding model like Vertex AI `multimodalembedding` or Cohere `embed-v4.0`.
+
+## Database
+
+Memories are stored in SQLite at `~/.openclaw/memory/memu.sqlite`.
+
+## Building
+
+```bash
+npm run build    # tsc → index.js + index.d.ts
+npm run dev      # tsc --watch
+```
+
+Build artifacts (`*.js`, `*.d.ts`) are gitignored. OpenClaw loads the TypeScript source directly via the `openclaw.extensions` field in `package.json`.
+
 ## Limitations
 
-### Text-only embeddings
-Gemini `gemini-embedding-001` is a text-only embedding model. Images and other binary content cannot be embedded directly. Image memorization relies on a Vision LLM fallback that converts images to text descriptions first, which means:
-- Search accuracy depends on the quality of the generated description
-- Visual details not captured in the description are lost
-- You cannot search by visual similarity (e.g. "find photos with similar colors")
+- **Text-only embeddings**: Image/binary content is converted to text descriptions first. Visual similarity search is not supported.
+- **LLM-dependent summarization**: Auto-capture summarizes via LLM, adding latency and cost. Nuances may be lost.
+- **No deduplication across sessions**: Duplicate check uses vector similarity (>0.95), which may miss semantically similar but differently worded memories.
+- **Gemini embedding quota**: Free tier has daily limits. Heavy usage can exhaust the quota, blocking all memory operations until reset.
+- **Single embedding space**: All memories share one vector space — no separate spaces for different modalities or categories.
+- **Subprocess overhead**: Each memory operation spawns a Python process. Not ideal for high-frequency calls.
 
-### No image binary in DB
-The memU database stores **text descriptions** of images, not the image binary itself. The original file remains on disk where it was saved. If the source file is moved or deleted, the memory entry still exists as text but cannot be used to retrieve the actual image.
+## Requirements
 
-### Single embedding space
-All memories share one vector space with one embedding model. There is no separate space for different modalities or categories. This can cause cross-category noise in search results.
-
-### LLM-dependent summarization
-Auto-capture summarizes conversations via LLM before storing. This adds latency and cost per turn, and the summary quality depends on the model used (default: `claude-haiku-4-5`). Important nuances may be lost in summarization.
-
-### No deduplication across sessions
-The duplicate check uses vector similarity (>0.95), which may miss semantically similar but differently worded memories. Over time, near-duplicate entries can accumulate.
-
-### Gemini embedding quota
-Gemini free tier has daily embedding quota limits. Heavy usage (many memorize calls, large auto-capture volume) can exhaust the quota, causing all memory operations to fail until reset.
+- Python 3.10+ with memU installed (`pip install memu` or local source via `memuPath`)
+- Node.js / TypeScript (for building the plugin)
+- OpenClaw with plugin SDK
 
 ## License
 
