@@ -21,6 +21,14 @@
     "autoRecall": {
       "label": "Auto-Recall",
       "help": "Automatically inject relevant memories into context"
+    },
+    "captureDetail": {
+      "label": "Capture Detail",
+      "help": "Controls how aggressively memU captures information: low = critical facts only, medium = balanced, high = permissive"
+    },
+    "recallTopK": {
+      "label": "Recall Top-K",
+      "help": "How many memory entries to retrieve and inject when auto-recall triggers"
     }
   },
   "configSchema": {
@@ -115,6 +123,17 @@
         "type": "number",
         "description": "Auto-cleanup interval in hours (0 = disabled)",
         "default": 24
+      },
+      "captureDetail": {
+        "type": "string",
+        "enum": ["low", "medium", "high"],
+        "default": "medium",
+        "description": "Capture detail level: low (critical only), medium (balanced), high (permissive)"
+      },
+      "recallTopK": {
+        "type": "number",
+        "default": 3,
+        "description": "Number of memories to retrieve during auto-recall"
       }
     },
     "required": ["anthropicToken", "geminiApiKey"]

@@ -118,9 +118,40 @@ async def judge_and_extract(content: str) -> dict:
     service = get_service()
     llm = service._get_llm_client()
     
-    prompt = f"""You are a memory filter for an AI assistant. Analyze this conversation and decide if it contains information worth remembering long-term.
+    capture_detail = os.environ.get("CAPTURE_DETAIL", "medium")
+    
+    if capture_detail == "high":
+        filter_guidance = """NOT worth remembering (respond SKIP):
+- Pure system messages, heartbeat/health checks
+- Exact duplicates of already-known information
 
-NOT worth remembering (respond SKIP):
+WORTH remembering (be generous — capture details):
+- User identity, preferences, opinions, habits
+- Important decisions or agreements
+- New facts about the user, their projects, or people they know
+- Significant events or milestones
+- Technical discoveries or lessons learned
+- Relationship dynamics or emotional context
+- Specific details: names, dates, numbers, places
+- Casual mentions that reveal personality or interests
+- Group chat dynamics, jokes with context, recurring topics
+- Small but meaningful details (pet names, food preferences, etc.)"""
+    elif capture_detail == "low":
+        filter_guidance = """NOT worth remembering (respond SKIP):
+- Casual greetings, small talk, jokes without substance
+- System messages, tool outputs, status checks
+- Temporary states ("I'm cooking", "brb")
+- Heartbeat/health checks
+- Repetitive or trivial exchanges
+- Already-known information being restated
+- Minor details or fleeting conversations
+
+WORTH remembering:
+- Critical user identity information
+- Important decisions or agreements
+- Major milestones or events"""
+    else:  # medium (default)
+        filter_guidance = """NOT worth remembering (respond SKIP):
 - Casual greetings, small talk, jokes without substance
 - System messages, tool outputs, status checks
 - Temporary states ("I'm cooking", "brb")
@@ -134,7 +165,11 @@ WORTH remembering:
 - New facts about the user or their projects
 - Significant events or milestones
 - Technical discoveries or lessons learned
-- Relationship dynamics or emotional context
+- Relationship dynamics or emotional context"""
+
+    prompt = f"""You are a memory filter for an AI assistant. Analyze this conversation and decide if it contains information worth remembering long-term.
+
+{filter_guidance}
 
 Conversation:
 {content}

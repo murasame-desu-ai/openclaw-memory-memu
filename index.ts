@@ -66,6 +66,10 @@ interface MemuConfig {
   // Memory maintenance
   cleanupMaxAgeDays?: number;         // Auto-cleanup: max age in days (default: 90)
   cleanupIntervalHours?: number;      // Auto-cleanup interval in hours (default: 0 = disabled)
+  // Capture settings  
+  captureDetail?: string;             // "low" | "medium" | "high" (default: "medium") — how detailed to capture
+  // Recall settings
+  recallTopK?: number;                // Number of memories to retrieve (default: 3)
   // Salience ranking
   rankingStrategy?: string;           // "similarity" | "salience" (default: "salience")
   recencyDecayDays?: number;          // Half-life for recency decay (default: 30)
@@ -114,6 +118,7 @@ async function callMemu(
       CLEANUP_INTERVAL_HOURS: String(config.cleanupIntervalHours ?? 0),
       RANKING_STRATEGY: config.rankingStrategy || "salience",
       RECENCY_DECAY_DAYS: String(config.recencyDecayDays ?? 30),
+      CAPTURE_DETAIL: config.captureDetail || "medium",
     };
 
     const proc = spawn(pythonPath, [wrapperPath, command, ...args], {
@@ -209,7 +214,7 @@ const memuPlugin = {
         }
 
         try {
-          const result = await callMemu(cfg, "search", [event.prompt, "3"]);
+          const result = await callMemu(cfg, "search", [event.prompt, String(cfg.recallTopK ?? 3)]);
 
           if (result.error || !result.items || result.items.length === 0) {
             return;
