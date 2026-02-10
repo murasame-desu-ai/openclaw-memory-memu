@@ -4,21 +4,35 @@ OpenClaw memory plugin using the [memU](https://github.com/murasame-desu-ai/memU
 
 Provides long-term memory for OpenClaw agents: auto-capture conversations, recall relevant context, and manage memories through agent tools.
 
+## Prerequisites
+
+- **Python 3.13+** (`python3 --version` to check)
+- **Node.js 18+** with npm (`node --version`)
+- **OpenClaw** installed and running
+- **Gemini API key** — free from [Google AI Studio](https://aistudio.google.com/apikey)
+
 ## Quick Start
 
 ### 1. Install the forked memU
 
-> **Important:** The original memU does not support Anthropic/Gemini providers. You must use the fork.
+> **⚠️ You must use the fork, not the original memU.** The original does not support Anthropic/Gemini providers and will not work with this plugin.
 
 ```bash
 git clone https://github.com/murasame-desu-ai/memU.git
 cd memU
 pip install -e .
+
+# Verify installation:
+python3 -c "from memu.app import MemoryService; print('OK')"
 ```
 
 ### 2. Install the plugin
 
 ```bash
+# Create extensions directory if it doesn't exist
+mkdir -p ~/.openclaw/extensions
+
+# Clone and build
 cd ~/.openclaw/extensions/
 git clone https://github.com/murasame-desu-ai/openclaw-memory-memu.git memory-memu
 cd memory-memu
@@ -28,19 +42,30 @@ npm run build
 
 ### 3. Add to OpenClaw config
 
-Add to `openclaw.json` → `plugins.entries`:
+Open your OpenClaw config file (typically `~/.openclaw/openclaw.json` or run `openclaw config path` to find it).
+
+Add the plugin entry under `plugins.entries`. **Do not replace your existing config** — merge this into your existing `plugins.entries` object:
 
 ```jsonc
 {
-  "memory-memu": {
-    "path": "~/.openclaw/extensions/memory-memu",
-    "config": {
-      "geminiApiKey": "AIza..."   // Required: get from https://aistudio.google.com/apikey
-      // anthropicToken is auto-resolved from OpenClaw auth — no manual setup needed
+  "plugins": {
+    "entries": {
+      // ... your existing plugins stay here ...
+
+      "memory-memu": {
+        "path": "~/.openclaw/extensions/memory-memu",
+        "config": {
+          "geminiApiKey": "YOUR_GEMINI_API_KEY_HERE"
+          // That's it! Anthropic token is auto-resolved from OpenClaw's own auth.
+          // See the Authentication section below for details.
+        }
+      }
     }
   }
 }
 ```
+
+**Minimum required config is just `geminiApiKey`.** All other options have sensible defaults. See the [full Config reference](#config) below for advanced options.
 
 ### 4. Restart OpenClaw
 
@@ -48,16 +73,28 @@ Add to `openclaw.json` → `plugins.entries`:
 openclaw gateway restart
 ```
 
-That's it. The plugin will auto-capture conversations and auto-recall relevant memories.
+Done! The plugin will now:
+- **Auto-recall**: Search relevant memories before each agent turn and inject them as context
+- **Auto-capture**: Summarize and store important information after each agent turn
+- **Periodic cleanup**: Remove old unreinforced memories automatically
 
-### Verify
+### 5. Verify it works
 
-```bash
-# Direct wrapper test:
-cd ~/.openclaw/extensions/memory-memu
-ANTHROPIC_TOKEN="sk-ant-..." GEMINI_API_KEY="AIza..." \
-  python3 memu_wrapper.py list
+Option A — Check OpenClaw logs for:
 ```
+memory-memu: initialized (Anthropic LLM + Gemini embeddings)
+```
+
+Option B — Test the Python wrapper directly:
+```bash
+cd ~/.openclaw/extensions/memory-memu
+ANTHROPIC_TOKEN="your-token" GEMINI_API_KEY="your-key" \
+  python3 memu_wrapper.py list
+# Should output: {"success": true, "count": 0, "total": 0, "items": []}
+```
+
+Option C — Chat with your agent and ask: "What do you remember about me?"
+After a few conversations, the agent should start recalling past context automatically.
 
 ## How It Works
 
