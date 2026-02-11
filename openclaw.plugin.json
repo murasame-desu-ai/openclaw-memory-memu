@@ -136,6 +136,6 @@
         "description": "Number of memories to retrieve during auto-recall"
       }
     },
-    "required": ["anthropicToken", "geminiApiKey"]
+    "required": []
   }
 }
