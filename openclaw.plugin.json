@@ -122,7 +122,7 @@
       "cleanupIntervalHours": {
         "type": "number",
         "description": "Auto-cleanup interval in hours (0 = disabled)",
-        "default": 24
+        "default": 0
       },
       "captureDetail": {
         "type": "string",
