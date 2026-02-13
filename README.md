@@ -103,6 +103,48 @@ ANTHROPIC_TOKEN="your-token" GEMINI_API_KEY="your-key" \
 Option C — Chat with your agent and ask: "What do you remember about me?"
 After a few conversations, the agent should start recalling past context automatically.
 
+## Example Usage
+
+Here's what the plugin does behind the scenes:
+
+**Day 1 - Initial conversation:**
+```
+You: I prefer working late at night, around 2-3 AM.
+Agent: Got it! [Plugin auto-captures: "User prefers working late at night, 2-3 AM"]
+```
+
+**Day 3 - Agent recalls automatically:**
+```
+You: Should I start that new project now?
+Agent: [Plugin auto-recalls: "User prefers working late at night, 2-3 AM"]
+       Given your late-night work preference, you might want to wait until 
+       later tonight when you're most productive.
+```
+
+**Using tools explicitly:**
+```
+You: Remember this: my dog's name is Moka, she's a Shiba Inu.
+Agent: I'll memorize that for you.
+       [Uses memory_memorize tool → stores with context]
+
+You: What do you remember about my pets?
+Agent: [Uses memory_list tool]
+       I remember Moka, your Shiba Inu!
+```
+
+**Image memorization:**
+```
+You: [Sends a photo of a lakeside sunset]
+     Remember this place, it's where I go hiking.
+Agent: [Plugin uses Claude Vision to describe the image]
+       [Stores: "Lakeside sunset location where user goes hiking"]
+       
+Later...
+You: Where was that hiking spot I showed you?
+Agent: [Retrieves: "Lakeside sunset location..."]
+       The lakeside with the beautiful sunset view!
+```
+
 ## How It Works
 
 ```
