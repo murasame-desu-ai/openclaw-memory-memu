@@ -11,28 +11,57 @@ Provides long-term memory for OpenClaw agents: auto-capture conversations, recal
 - **OpenClaw** installed and running
 - **Gemini API key** — free from [Google AI Studio](https://aistudio.google.com/apikey)
 
-## Quick Start
+## Dependencies
 
-### 1. Install the forked memU
+### Python (for memU backend)
 
-> **⚠️ You must use the fork, not the original memU.** The original does not support Anthropic/Gemini providers and will not work with this plugin.
+You must install the **forked memU** — the original does not support Anthropic/Gemini providers.
 
 ```bash
 git clone https://github.com/murasame-desu-ai/memU.git
 cd memU
 pip install -e .
 
-# Verify installation:
+# Verify:
 python3 -c "from memu.app import MemoryService; print('OK')"
 ```
 
-### 2. Install the plugin
+Key Python packages (installed by memU):
+- `httpx` — API client for Anthropic/Gemini
+- `pendulum` — datetime handling
+- `numpy` — vector operations
+- `aiosqlite` — async SQLite
+
+### Node.js
+
+- `typescript` (dev only, for building)
+- No runtime npm dependencies — the plugin uses OpenClaw's SDK and Node.js built-ins
+
+## Installation
+
+### Option A: Install script (recommended)
 
 ```bash
-# Create extensions directory if it doesn't exist
-mkdir -p ~/.openclaw/extensions
+curl -fsSL https://raw.githubusercontent.com/murasame-desu-ai/openclaw-memory-memu/main/install.sh | bash
+```
 
-# Clone and build
+This downloads the latest release tarball and installs to `~/.openclaw/extensions/memory-memu/`.
+
+### Option B: From release tarball
+
+Download a `.tar.gz` from [Releases](https://github.com/murasame-desu-ai/openclaw-memory-memu/releases), then:
+
+```bash
+mkdir -p ~/.openclaw/extensions/memory-memu
+tar xzf memory-memu-*.tar.gz -C ~/.openclaw/extensions/memory-memu --strip-components=1
+cd ~/.openclaw/extensions/memory-memu
+npm install && npm run build
+```
+
+### Option C: Git clone (development)
+
+```bash
+mkdir -p ~/.openclaw/extensions
 cd ~/.openclaw/extensions/
 git clone https://github.com/murasame-desu-ai/openclaw-memory-memu.git memory-memu
 cd memory-memu
@@ -40,11 +69,11 @@ npm install
 npm run build
 ```
 
-### 3. Add to OpenClaw config
+## Configuration
 
 Open your OpenClaw config file (typically `~/.openclaw/openclaw.json` or run `openclaw config path` to find it).
 
-Add the plugin configuration. **Do not replace your existing config** — merge these sections into your existing config:
+Add the plugin configuration. **Do not replace your existing config** — merge these sections:
 
 ```jsonc
 {
@@ -53,7 +82,7 @@ Add the plugin configuration. **Do not replace your existing config** — merge 
     "slots": {
       "memory": "memory-memu"
     },
-    
+
     "entries": {
       // ... your existing plugins stay here ...
 
@@ -74,7 +103,7 @@ Add the plugin configuration. **Do not replace your existing config** — merge 
 
 **Minimum required config is just `geminiApiKey`.** All other options have sensible defaults. See the [full Config reference](#config) below for advanced options.
 
-### 4. Restart OpenClaw
+### Restart OpenClaw
 
 ```bash
 openclaw gateway restart
@@ -85,7 +114,7 @@ Done! The plugin will now:
 - **Auto-capture**: Summarize and store important information after each agent turn
 - **Periodic cleanup**: Remove old unreinforced memories automatically
 
-### 5. Verify it works
+### Verify it works
 
 Option A — Check OpenClaw logs for:
 ```
