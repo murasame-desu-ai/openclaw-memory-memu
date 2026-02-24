@@ -14,7 +14,9 @@ Environment:
 """
 import asyncio
 import json
+import logging
 import os
+import re
 import sys
 
 # Add memU to path (only needed if using local source instead of pip install)
@@ -262,10 +264,50 @@ async def store_memory(content: str, memory_type: str = None, categories: list[s
         "categories": categories,
     }
 
+logger = logging.getLogger(__name__)
+
+# Korean particles (조사) to strip from word endings
+_KO_PARTICLE_RE = re.compile(
+    r"(?<=.{2})(은|는|이|가|을|를|에|서|의|로|와|과|도|만|까지|부터|에서|으로|이나|라도)$"
+)
+
+# Stopwords
+_KO_STOPWORDS = frozenset(
+    "은 는 이 가 을 를 에 서 도 로 와 과 의 만 까지 부터 에서 으로 이나 라도 "
+    "그리고 하지만 그래서 그런데 때문에 위해 대해 좀 뭔가 어떻게 어떤 이런 그런 저런 거 것 건 게".split()
+)
+_EN_STOPWORDS = frozenset(
+    "the a an is are was were do does did have has had will would could should can may might "
+    "been being about what which who how when where why this that these those it its".split()
+)
+_STOPWORDS = _KO_STOPWORDS | _EN_STOPWORDS
+
+
+def preprocess_query(query: str) -> str:
+    """Preprocess a search query by removing Korean particles and stopwords."""
+    words = query.split()
+    processed = []
+    for word in words:
+        # Skip stopwords (check original word first)
+        if word.lower() in _STOPWORDS:
+            continue
+        # Strip Korean particle from ending
+        stripped = _KO_PARTICLE_RE.sub("", word)
+        if stripped.lower() not in _STOPWORDS:
+            processed.append(stripped)
+    result = " ".join(processed).strip()
+    # If result is too short, return original
+    if len(result) <= 2:
+        result = query
+    logger.debug("Query preprocessed: %r -> %r", query, result)
+    return result
+
+
 async def search_memory(query: str, limit: int = 3):
     """Search for relevant memories."""
     service = get_service()
-    
+    query = preprocess_query(query)
+
     result = await service.retrieve(
         queries=[{"role": "user", "content": query}],
     )
