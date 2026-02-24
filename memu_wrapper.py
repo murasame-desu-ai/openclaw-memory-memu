@@ -15,6 +15,7 @@ Environment:
 import asyncio
 import json
 import os
+import re
 import sys
 
 # Add memU to path (only needed if using local source instead of pip install)
@@ -55,6 +56,20 @@ ENABLE_REINFORCEMENT = os.environ.get("ENABLE_REINFORCEMENT", "true").lower() ==
 CATEGORY_ASSIGN_THRESHOLD = float(os.environ.get("CATEGORY_ASSIGN_THRESHOLD", "0.25"))
 RANKING_STRATEGY = os.environ.get("RANKING_STRATEGY", "salience")  # "similarity" | "salience"
 RECENCY_DECAY_DAYS = float(os.environ.get("RECENCY_DECAY_DAYS", "30"))
+
+# Rule-based noise patterns — skip storage if any match in assistant response
+NOISE_PATTERNS = [
+    re.compile(r"I don.t have access to", re.IGNORECASE),
+    re.compile(r"I cannot (summarize|process|access|read|fulfill)", re.IGNORECASE),
+    re.compile(r"I.m unable to", re.IGNORECASE),
+    re.compile(r"NO_REPLY"),
+    re.compile(r"HEARTBEAT_OK"),
+    re.compile(r"\[MISSING\]"),
+    re.compile(r"GatewayRestart"),
+    re.compile(r"Error:.*(?:ENOENT|ETIMEDOUT|ECONNREFUSED)"),
+    re.compile(r"\[compacted:.*tool output removed", re.IGNORECASE),
+    re.compile(r"\[truncated:.*output exceeded", re.IGNORECASE),
+]
 
 # Global service instance
 _service = None
@@ -120,10 +135,18 @@ async def judge_and_extract(content: str) -> dict:
     
     capture_detail = os.environ.get("CAPTURE_DETAIL", "medium")
     
+    noise_exclusions = """- AI meta-commentary about its own limitations ('I cannot access...', 'I don't have...')
+- Failed operations or error logs (ENOENT, ETIMEDOUT, ECONNREFUSED, etc.)
+- NO_REPLY or HEARTBEAT_OK responses
+- Messages about missing files or permissions
+- Pure acknowledgments without new information ('OK', 'Got it', 'Sure')
+- Compacted/truncated tool output placeholders"""
+
     if capture_detail == "high":
-        filter_guidance = """NOT worth remembering (respond SKIP):
+        filter_guidance = f"""NOT worth remembering (respond SKIP):
 - Pure system messages, heartbeat/health checks
 - Exact duplicates of already-known information
+{noise_exclusions}
 
 WORTH remembering (be generous — capture details):
 - User identity, preferences, opinions, habits
@@ -137,7 +160,7 @@ WORTH remembering (be generous — capture details):
 - Group chat dynamics, jokes with context, recurring topics
 - Small but meaningful details (pet names, food preferences, etc.)"""
     elif capture_detail == "low":
-        filter_guidance = """NOT worth remembering (respond SKIP):
+        filter_guidance = f"""NOT worth remembering (respond SKIP):
 - Casual greetings, small talk, jokes without substance
 - System messages, tool outputs, status checks
 - Temporary states ("I'm cooking", "brb")
@@ -145,19 +168,21 @@ WORTH remembering (be generous — capture details):
 - Repetitive or trivial exchanges
 - Already-known information being restated
 - Minor details or fleeting conversations
+{noise_exclusions}
 
 WORTH remembering:
 - Critical user identity information
 - Important decisions or agreements
 - Major milestones or events"""
     else:  # medium (default)
-        filter_guidance = """NOT worth remembering (respond SKIP):
+        filter_guidance = f"""NOT worth remembering (respond SKIP):
 - Casual greetings, small talk, jokes without substance
 - System messages, tool outputs, status checks
 - Temporary states ("I'm cooking", "brb")
 - Heartbeat/health checks
 - Repetitive or trivial exchanges
 - Already-known information being restated
+{noise_exclusions}
 
 WORTH remembering:
 - User identity, preferences, opinions
@@ -210,7 +235,20 @@ async def store_memory(content: str, memory_type: str = None, categories: list[s
     If skip_judge=True, stores directly (for manual tool calls).
     """
     service = get_service()
-    
+
+    # Step 0: Rule-based noise pre-filter (fast, before LLM call)
+    if not skip_judge:
+        # Extract assistant portion for noise check
+        assistant_portion = ""
+        for line in content.split("\n"):
+            if line.startswith("Assistant:"):
+                assistant_portion += line + "\n"
+        if not assistant_portion:
+            assistant_portion = content
+        for pattern in NOISE_PATTERNS:
+            if pattern.search(assistant_portion):
+                return {"success": False, "skipped": True, "reason": f"Noise pattern matched: {pattern.pattern}"}
+
     # Step 1: Judge importance and extract info
     if not skip_judge and memory_type is None:
         judgment = await judge_and_extract(content)

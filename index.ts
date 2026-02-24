@@ -163,16 +163,42 @@ async function callMemu(
  */
 function shouldCapture(text: string): boolean {
   if (text.length < 20) return false;
-  
+
   // Skip pure tool/code output
   if (text.startsWith("{") || text.startsWith("```")) return false;
-  
+
+  // Strip memory tags before content checks
+  const stripped = stripMemoryTags(text);
+
+  // Skip if too short after stripping tags
+  if (stripped.length < 50) return false;
+
+  // Skip empty content
+  if (/^\s*$/.test(stripped)) return false;
+
+  // Noise pattern filters — skip known non-memorable content
+  const noisePatterns = [
+    /I don't have access to/i,
+    /I cannot (summarize|process|access|read)/i,
+    /NO_REPLY/,
+    /HEARTBEAT_OK/,
+    /\[MISSING\]/,
+    /GatewayRestart/,
+    /Error:|error:|ENOENT|ETIMEDOUT|ECONNREFUSED/,
+    /I cannot fulfill|I'm unable to|I don't have the ability/i,
+    /\[compacted:|truncated:/i,
+  ];
+  for (const pattern of noisePatterns) {
+    if (pattern.test(stripped)) return false;
+  }
+
+  // Skip empty role lines (entire content is just empty role prefixes)
+  const withoutEmptyRoles = stripped.replace(/^(User|Assistant):\s*$/gm, "").trim();
+  if (withoutEmptyRoles.length < 50) return false;
+
   // Skip heartbeat-only exchanges
-  if (/^(User:.*HEARTBEAT.*\n?Assistant:.*HEARTBEAT_OK)/is.test(text)) return false;
-  
-  // Skip if only system/status messages
-  if (/^(User:.*GatewayRestart|User:.*\[MISSING\])/is.test(text)) return false;
-  
+  if (/^(User:.*HEARTBEAT.*\n?Assistant:.*HEARTBEAT_OK)/is.test(stripped)) return false;
+
   return true;
 }
 
