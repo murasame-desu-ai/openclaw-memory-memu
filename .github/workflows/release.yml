@@ -31,15 +31,12 @@ jobs:
 
       - name: Create tarball
         run: |
+          STAGING=$(mktemp -d)
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='__pycache__' \
+            --exclude='*.db' --exclude='*.sqlite' --exclude='.github' \
+            . "$STAGING/memory-memu/"
           tar czf "memory-memu-${{ steps.version.outputs.VERSION }}.tar.gz" \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='__pycache__' \
-            --exclude='*.db' \
-            --exclude='*.sqlite' \
-            --exclude='.github' \
-            -C .. \
-            "$(basename "$PWD")"
+            -C "$STAGING" memory-memu
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
