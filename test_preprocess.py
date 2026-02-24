@@ -2,12 +2,6 @@
 from memu_wrapper import preprocess_query
 
 
-def test_strips_korean_particles():
-    assert preprocess_query("엔트로픽의 모델") == "엔트로픽 모델"
-    assert preprocess_query("메뮤에서 검색") == "메뮤 검색"
-    assert preprocess_query("사용자가 저장") == "사용자 저장"
-
-
 def test_removes_korean_stopwords():
     assert preprocess_query("그리고 메뮤 때문에 오류") == "메뮤 오류"
 
@@ -29,11 +23,19 @@ def test_short_result_returns_original():
 
 def test_mixed_korean_english():
     result = preprocess_query("엔트로픽의 Claude에서 사용")
-    assert "엔트로픽" in result
-    assert "Claude" in result
+    assert "엔트로픽의" in result
+    assert "Claude에서" in result
 
 
 def test_whitespace_cleanup():
     result = preprocess_query("  메뮤에서   검색을   ")
-    assert result == "메뮤 검색"
+    assert "메뮤에서" in result
+    assert "검색을" in result
     assert "  " not in result
+
+
+def test_preserves_particles_on_words():
+    """Particles attached to words should NOT be stripped."""
+    assert preprocess_query("엔트로픽의 모델") == "엔트로픽의 모델"
+    assert preprocess_query("메뮤에서 검색") == "메뮤에서 검색"
+    assert preprocess_query("사용자가 저장") == "사용자가 저장"
