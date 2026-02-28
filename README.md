@@ -1,14 +1,19 @@
 # openclaw-memory-memu
 
+[![OpenClaw Plugin](https://img.shields.io/badge/OpenClaw-Plugin-blue)](https://github.com/openclaw/openclaw)
+[![Version](https://img.shields.io/badge/version-0.2.0-green)](https://github.com/murasame-desu-ai/openclaw-memory-memu/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 OpenClaw memory plugin using the [memU](https://github.com/murasame-desu-ai/memU) framework (fork with Anthropic/Gemini multi-provider support).
 
 Provides long-term memory for OpenClaw agents: auto-capture conversations, recall relevant context, and manage memories through agent tools.
 
+**Tested with OpenClaw 2026.2.22 ~ 2026.2.26.**
 ## Prerequisites
 
 - **Python 3.13+** (`python3 --version` to check)
 - **Node.js 18+** with npm (`node --version`)
-- **OpenClaw** installed and running
+- **OpenClaw 2026.2.19+** installed and running
 - **Gemini API key** — free from [Google AI Studio](https://aistudio.google.com/apikey)
 
 ## Dependencies
@@ -100,6 +105,16 @@ Add the plugin configuration. **Do not replace your existing config** — merge 
 ```
 
 > **⚠️ Don't forget `plugins.slots.memory`!** Without this line, the plugin will be installed but not used as the memory backend.
+
+> **💡 Silence doctor warnings**: If `openclaw doctor` shows a provenance warning for memory-memu, add `plugins.allow`:
+> ```jsonc
+> {
+>   "plugins": {
+>     "allow": ["memory-memu"],
+>     // ... rest of your config
+>   }
+> }
+> ```
 
 **Minimum required config is just `geminiApiKey`.** All other options have sensible defaults. See the [full Config reference](#config) below for advanced options.
 
