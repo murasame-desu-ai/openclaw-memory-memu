@@ -10,7 +10,7 @@ import { jsonResult } from "openclaw/plugin-sdk";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, appendFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -243,7 +243,7 @@ const memuPlugin = {
     }
 
     // ========================================================================
-    // Clean message buffer — capture messages without metadata pollution
+    // Clean message buffer — session-scoped, metadata-free
     // ========================================================================
     
     interface CleanMessage {
@@ -252,31 +252,94 @@ const memuPlugin = {
       content: string;
       timestamp: number;
     }
-    const cleanMessageBuffer: CleanMessage[] = [];
+    
+    // Session-scoped buffers (#2: sessionKey-based separation)
+    const sessionBuffers = new Map<string, CleanMessage[]>();
     const MAX_BUFFER_SIZE = 20;
+    let currentSessionKey: string | null = null;
+    let currentSessionId: string | null = null;
+    
+    function getBuffer(key?: string): CleanMessage[] {
+      const k = key || currentSessionKey || "__default__";
+      if (!sessionBuffers.has(k)) sessionBuffers.set(k, []);
+      return sessionBuffers.get(k)!;
+    }
+    
+    function pushToBuffer(key: string | undefined, msg: CleanMessage) {
+      const buf = getBuffer(key);
+      buf.push(msg);
+      if (buf.length > MAX_BUFFER_SIZE) buf.shift();
+    }
 
+    // #4: Reset buffer on session reset (sessionId change)
+    api.on("session_start", async (event, ctx) => {
+      const newSessionKey = ctx.sessionKey || event.sessionKey;
+      const newSessionId = event.sessionId;
+      
+      if (newSessionKey) {
+        // If sessionId changed for same sessionKey → session was reset
+        if (currentSessionKey === newSessionKey && currentSessionId && currentSessionId !== newSessionId) {
+          sessionBuffers.delete(newSessionKey);
+          api.logger.info?.(`memory-memu: buffer reset for session ${newSessionKey} (session reset detected)`);
+        }
+        currentSessionKey = newSessionKey;
+      }
+      if (newSessionId) currentSessionId = newSessionId;
+    });
+    
+    // Clean up ended session buffers
+    api.on("session_end", async (event, ctx) => {
+      const key = ctx.sessionKey || event.sessionKey;
+      if (key && key !== currentSessionKey) {
+        sessionBuffers.delete(key);
+      }
+    });
+
+    // #1: Capture clean user messages at message_received
     api.on("message_received", async (event) => {
       const senderName = (event.metadata?.senderName as string) || "User";
       if (event.content?.trim()) {
-        cleanMessageBuffer.push({
+        pushToBuffer(currentSessionKey ?? undefined, {
           role: "user",
           sender: senderName,
           content: event.content.trim(),
           timestamp: Date.now(),
         });
-        if (cleanMessageBuffer.length > MAX_BUFFER_SIZE) cleanMessageBuffer.shift();
       }
     });
 
-    api.on("message_sending", async (event) => {
-      if (event.content?.trim()) {
-        cleanMessageBuffer.push({
+    // #1: Use message_sent instead of message_sending (only capture successful sends)
+    api.on("message_sent", async (event) => {
+      if (event.success && event.content?.trim()) {
+        pushToBuffer(currentSessionKey ?? undefined, {
           role: "assistant",
           sender: "Assistant",
           content: event.content.trim(),
           timestamp: Date.now(),
         });
-        if (cleanMessageBuffer.length > MAX_BUFFER_SIZE) cleanMessageBuffer.shift();
+      }
+    });
+    
+    // #3: Also capture via before_message_write for assistant responses
+    // that don't go through message_sent (e.g. inline replies)
+    api.on("before_message_write", (event, ctx) => {
+      const msg = event.message as unknown as Record<string, unknown>;
+      if (msg?.role === "assistant") {
+        let text = "";
+        if (typeof msg.content === "string") text = msg.content;
+        else if (Array.isArray(msg.content)) {
+          for (const block of msg.content as any[]) {
+            if (block?.type === "text" && typeof block.text === "string") text += block.text;
+          }
+        }
+        if (text.trim() && !text.includes("NO_REPLY")) {
+          pushToBuffer(ctx.sessionKey ?? undefined, {
+            role: "assistant",
+            sender: "Assistant",
+            content: text.trim(),
+            timestamp: Date.now(),
+          });
+        }
       }
     });
 
@@ -315,22 +378,15 @@ const memuPlugin = {
 
     // Auto-capture: store important info after agent ends
     if (cfg.autoCapture !== false) {
-      api.on("agent_end", async (event) => {
-        
-        // Debug: detect image blocks in messages
-        for (const msg of (event.messages ?? [])) {
-          const m = msg as Record<string, unknown>;
-          if (Array.isArray(m.content)) {
-            for (const block of m.content) {
-              const b = block as Record<string, unknown>;
-              if (b.type === "image" || b.type === "image_url" || b.type === "image_file") {
-                appendFileSync("/tmp/memu-image-debug.log", `\n[${new Date().toISOString()}] IMAGE BLOCK in agent_end:\n${JSON.stringify({ role: m.role, blockType: b.type, keys: Object.keys(b) }, null, 2)}\n`);
-              }
-            }
-          }
+      api.on("agent_end", async (event, ctx) => {
+        // #5: Skip heartbeat/cron/memory triggers — they produce noise, not memories
+        const trigger = (ctx as any)?.trigger as string | undefined;
+        if (trigger === "heartbeat" || trigger === "cron" || trigger === "memory") {
+          api.logger.info?.(`memory-memu: skipping capture for trigger=${trigger}`);
+          return;
         }
 
-        api.logger.info?.(`memory-memu: agent_end triggered, success=${event.success}, messages=${event.messages?.length ?? 0}`);
+        api.logger.info?.(`memory-memu: agent_end triggered, success=${event.success}, trigger=${trigger || "user"}, messages=${event.messages?.length ?? 0}`);
         
         if (!event.success || !event.messages || event.messages.length === 0) {
           api.logger.info?.(`memory-memu: skipping capture - no valid messages`);
@@ -341,6 +397,7 @@ const memuPlugin = {
           // Use clean message buffer (captured at message_received/message_sending)
           // This avoids metadata pollution from OpenClaw's message formatting
           
+          const cleanMessageBuffer = getBuffer(ctx.sessionKey);
           if (cleanMessageBuffer.length < 2) {
             // Fallback: extract from agent_end messages if buffer is empty (e.g. first turn after restart)
             const lastMsg = event.messages?.[event.messages.length - 1] as Record<string, unknown> | undefined;
