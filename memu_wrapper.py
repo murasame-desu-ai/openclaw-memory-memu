@@ -202,7 +202,7 @@ Conversation:
 
 If NOT worth remembering, respond with exactly: SKIP
 If WORTH remembering, respond in this exact JSON format:
-{{"summary": "one concise sentence capturing the key info", "type": "one of: profile/preference/fact/event", "categories": ["one or more of: User Profile, Preferences, Facts, Events"]}}"""
+{{"summary": "one concise sentence capturing the key info", "type": "one of: profile/event/knowledge/behavior/skill/tool", "categories": ["one or more of: User Profile, Preferences, Facts, Events"]}}"""
     
     response = await llm.chat(prompt)
     response = response.strip()
@@ -220,13 +220,24 @@ If WORTH remembering, respond in this exact JSON format:
         return {
             "skip": False,
             "summary": data.get("summary", ""),
-            "type": data.get("type", "fact"),
+            "type": data.get("type", "knowledge"),
             "categories": data.get("categories", ["Facts"]),
         }
     except (json.JSONDecodeError, KeyError):
+        # Guard: LLM refusal responses should never be stored as memories
+        refusal_patterns = [
+            "i cannot", "i don't have", "i need more context",
+            "could you provide", "i'm unable to", "i have no stored",
+            "not enough information", "cannot provide", "cannot summarize",
+            "please provide", "the conversation appears",
+        ]
+        response_lower = response.lower()
+        if any(p in response_lower for p in refusal_patterns):
+            return {"skip": True}
+        
         # If LLM returned non-JSON non-SKIP, treat as summary
         if len(response) > 10:
-            return {"skip": False, "summary": response, "type": "fact", "categories": ["Facts"]}
+            return {"skip": False, "summary": response, "type": "knowledge", "categories": ["Facts"]}
         return {"skip": True}
 
 async def store_memory(content: str, memory_type: str = None, categories: list[str] = None, skip_judge: bool = False):
@@ -256,14 +267,14 @@ async def store_memory(content: str, memory_type: str = None, categories: list[s
         if judgment.get("skip"):
             return {"success": False, "skipped": True, "reason": "Not worth remembering"}
         summary = judgment["summary"]
-        memory_type = judgment.get("type", "fact")
+        memory_type = judgment.get("type", "knowledge")
         categories = judgment.get("categories", ["Facts"])
     else:
         # Direct store (from manual tool call) - just summarize
         llm = service._get_llm_client()
         prompt = f"Summarize in one concise sentence:\n{content}\n\nSummary:"
         summary = (await llm.chat(prompt)).strip()
-        memory_type = memory_type or "fact"
+        memory_type = memory_type or "knowledge"
         categories = categories or ["Facts"]
     
     if len(summary) < 5:

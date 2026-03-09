@@ -209,6 +209,28 @@ function stripMemoryTags(text: string): string {
   return text.replace(/<relevant-memories>[\s\S]*?<\/relevant-memories>\s*/g, "").trim();
 }
 
+/**
+ * Strip OpenClaw metadata from user messages, keeping only actual content.
+ * Extracts sender name from metadata before removing it.
+ */
+function stripMessageMetadata(text: string): { content: string; sender: string | null } {
+  let sender: string | null = null;
+  
+  // Extract sender name before stripping
+  const senderMatch = text.match(/"sender":\s*"([^"]+)"/);
+  if (senderMatch) sender = senderMatch[1];
+  
+  let result = text;
+  // Strip relevant-memories
+  result = result.replace(/<relevant-memories>[\s\S]*?<\/relevant-memories>\s*/g, "");
+  // Strip Conversation info block
+  result = result.replace(/Conversation info \(untrusted metadata\):\s*```json\s*\{[\s\S]*?\}\s*```\s*/g, "");
+  // Strip Sender block
+  result = result.replace(/Sender \(untrusted metadata\):\s*```json\s*\{[\s\S]*?\}\s*```\s*/g, "");
+  
+  return { content: result.trim(), sender };
+}
+
 const memuPlugin = {
   register(api: OpenClawPluginApi) {
     
@@ -221,11 +243,41 @@ const memuPlugin = {
     }
 
     // ========================================================================
-    // Debug: image detection (temporary)
+    // Clean message buffer — capture messages without metadata pollution
     // ========================================================================
     
-    api.on("message_received", async (event, ctx) => {
-      appendFileSync("/tmp/memu-image-debug.log", `\n[${new Date().toISOString()}] message_received:\n${JSON.stringify({ from: event.from, contentLen: event.content?.length, metadata: event.metadata }, null, 2)}\n`);
+    interface CleanMessage {
+      role: "user" | "assistant";
+      sender: string;
+      content: string;
+      timestamp: number;
+    }
+    const cleanMessageBuffer: CleanMessage[] = [];
+    const MAX_BUFFER_SIZE = 20;
+
+    api.on("message_received", async (event) => {
+      const senderName = (event.metadata?.senderName as string) || "User";
+      if (event.content?.trim()) {
+        cleanMessageBuffer.push({
+          role: "user",
+          sender: senderName,
+          content: event.content.trim(),
+          timestamp: Date.now(),
+        });
+        if (cleanMessageBuffer.length > MAX_BUFFER_SIZE) cleanMessageBuffer.shift();
+      }
+    });
+
+    api.on("message_sending", async (event) => {
+      if (event.content?.trim()) {
+        cleanMessageBuffer.push({
+          role: "assistant",
+          sender: "Assistant",
+          content: event.content.trim(),
+          timestamp: Date.now(),
+        });
+        if (cleanMessageBuffer.length > MAX_BUFFER_SIZE) cleanMessageBuffer.shift();
+      }
     });
 
     // ========================================================================
@@ -286,85 +338,86 @@ const memuPlugin = {
         }
 
         try {
-          // Extract messages with role info
-          interface ParsedMessage {
-            role: string;
-            content: string;
-          }
-          const messages: ParsedMessage[] = [];
+          // Use clean message buffer (captured at message_received/message_sending)
+          // This avoids metadata pollution from OpenClaw's message formatting
           
-          for (const msg of event.messages) {
-            if (!msg || typeof msg !== "object") continue;
-            const msgObj = msg as Record<string, unknown>;
-            
-            const role = msgObj.role as string;
-            if (role !== "user" && role !== "assistant") continue;
-            
-            let content = "";
-            if (typeof msgObj.content === "string") {
-              content = msgObj.content;
-            } else if (Array.isArray(msgObj.content)) {
-              for (const block of msgObj.content) {
-                if (
-                  block &&
-                  typeof block === "object" &&
-                  (block as Record<string, unknown>).type === "text" &&
-                  typeof (block as Record<string, unknown>).text === "string"
-                ) {
-                  content += (block as Record<string, unknown>).text as string;
+          if (cleanMessageBuffer.length < 2) {
+            // Fallback: extract from agent_end messages if buffer is empty (e.g. first turn after restart)
+            const lastMsg = event.messages?.[event.messages.length - 1] as Record<string, unknown> | undefined;
+            if (!lastMsg || lastMsg.role !== "assistant") return;
+            let assistantContent = "";
+            if (typeof lastMsg.content === "string") {
+              assistantContent = lastMsg.content;
+            } else if (Array.isArray(lastMsg.content)) {
+              for (const block of lastMsg.content) {
+                if (block && typeof block === "object" && (block as any).type === "text") {
+                  assistantContent += (block as any).text ?? "";
                 }
               }
             }
+            if (!assistantContent.trim()) return;
             
-            if (content.trim()) {
-              messages.push({ role, content: content.trim() });
+            // Find last user message
+            let userContent = "";
+            for (let i = event.messages.length - 2; i >= 0; i--) {
+              const m = event.messages[i] as Record<string, unknown>;
+              if (m.role === "user") {
+                if (typeof m.content === "string") userContent = m.content;
+                else if (Array.isArray(m.content)) {
+                  for (const block of m.content) {
+                    if (block && typeof block === "object" && (block as any).type === "text") {
+                      userContent += (block as any).text ?? "";
+                    }
+                  }
+                }
+                break;
+              }
             }
+            if (!userContent.trim()) return;
+            
+            // Strip metadata as fallback
+            const { content: cleanUser, sender } = stripMessageMetadata(userContent);
+            const content = `${sender || "User"}: ${cleanUser}\nAssistant: ${assistantContent.trim()}`;
+            if (!shouldCapture(content)) return;
+            
+            const result = await callMemu(cfg, "store", [JSON.stringify({ content })]);
+            if ((result as any).skipped) {
+              api.logger.info?.(`memory-memu: skipped - ${(result as any).reason}`);
+            } else if (result.success) {
+              api.logger.info?.(`memory-memu: captured [${(result as any).type}] ${(result as any).summary?.slice(0, 60)}`);
+            }
+            return;
           }
 
-          if (messages.length < 2) {
-            return; // Need at least user + assistant
-          }
-
-          // Get current turn (last user + last assistant)
-          let lastAssistantIdx = -1;
-          for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].role === "assistant") {
-              lastAssistantIdx = i;
+          // Find current turn from clean buffer (last user + last assistant)
+          let lastAssistant: CleanMessage | null = null;
+          let lastUser: CleanMessage | null = null;
+          
+          for (let i = cleanMessageBuffer.length - 1; i >= 0; i--) {
+            if (!lastAssistant && cleanMessageBuffer[i].role === "assistant") {
+              lastAssistant = cleanMessageBuffer[i];
+            }
+            if (lastAssistant && cleanMessageBuffer[i].role === "user") {
+              lastUser = cleanMessageBuffer[i];
               break;
             }
           }
-          if (lastAssistantIdx < 0) return;
           
-          // Find the user message before the last assistant
-          let lastUserIdx = -1;
-          for (let i = lastAssistantIdx - 1; i >= 0; i--) {
-            if (messages[i].role === "user") {
-              lastUserIdx = i;
-              break;
-            }
-          }
-          if (lastUserIdx < 0) return;
+          if (!lastUser || !lastAssistant) return;
 
-          const currentTurn = [messages[lastUserIdx], messages[lastAssistantIdx]];
+          // Build context from earlier messages in buffer
+          const currentUserIdx = cleanMessageBuffer.indexOf(lastUser);
+          const contextMsgs = cleanMessageBuffer.slice(Math.max(0, currentUserIdx - 4), currentUserIdx);
           
-          // Get context (2 messages before current turn)
-          const contextMessages = messages.slice(Math.max(0, lastUserIdx - 2), lastUserIdx);
-          
-          // Build content with context
           let content = "";
-          if (contextMessages.length > 0) {
-            const contextStr = contextMessages
-              .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.slice(0, 100)}...`)
+          if (contextMsgs.length > 0) {
+            const contextStr = contextMsgs
+              .map(m => `${m.sender}: ${m.content}`)
               .join("\n");
             content += `(이전 맥락:\n${contextStr})\n\n`;
           }
           
-          content += currentTurn
-            .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-            .join("\n");
-
-          // Remove injected memory tags
-          content = stripMemoryTags(content);
+          content += `${lastUser.sender}: ${lastUser.content}\nAssistant: ${lastAssistant.content}`;
 
           // Skip if not worth capturing
           if (!shouldCapture(content)) {
