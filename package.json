@@ -8,14 +8,16 @@
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "dependencies": {},
   "devDependencies": {
+    "openclaw": "^2026.3.8",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "openclaw": "*"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

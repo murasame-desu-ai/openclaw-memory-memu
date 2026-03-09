@@ -1,14 +1,14 @@
 # openclaw-memory-memu
 
 [![OpenClaw Plugin](https://img.shields.io/badge/OpenClaw-Plugin-blue)](https://github.com/openclaw/openclaw)
-[![Version](https://img.shields.io/badge/version-0.2.0-green)](https://github.com/murasame-desu-ai/openclaw-memory-memu/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-green)](https://github.com/murasame-desu-ai/openclaw-memory-memu/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 OpenClaw memory plugin using the [memU](https://github.com/murasame-desu-ai/memU) framework (fork with Anthropic/Gemini multi-provider support).
 
 Provides long-term memory for OpenClaw agents: auto-capture conversations, recall relevant context, and manage memories through agent tools.
 
-**Tested with OpenClaw 2026.2.22 ~ 2026.2.26.**
+**Tested with OpenClaw 2026.2.22 ~ 2026.3.8.**
 ## Prerequisites
 
 - **Python 3.13+** (`python3 --version` to check)
@@ -205,7 +205,13 @@ Before each agent turn, the plugin searches for memories related to the user's p
 
 ### Auto-Capture (`agent_end`)
 
-After each successful agent turn, the plugin extracts the current conversation turn (last user + assistant messages, with 2 messages of prior context), summarizes it via LLM, and stores it as a memory item.
+After each successful agent turn, the plugin builds the conversation from a **clean message buffer** (captured via `message_received` and `message_sent` hooks) — avoiding metadata pollution from OpenClaw's internal message formatting. The current turn plus up to 4 messages of prior context are summarized via LLM and stored.
+
+**v0.3.0 improvements:**
+- **Session-scoped buffers**: Messages are keyed by `sessionKey` — no cross-session pollution between DMs, groups, and sub-agents.
+- **Trigger filtering**: Heartbeat, cron, and memory-triggered turns are automatically skipped (they produce noise, not memories).
+- **Reset detection**: Buffers auto-clear when `sessionId` changes (e.g. `/new` or `/reset` commands).
+- **Refusal guard**: LLM responses like "I cannot summarize..." are detected and discarded instead of being stored as garbage memories.
 
 ### Periodic Cleanup
 
@@ -424,12 +430,13 @@ Build artifacts (`*.js`, `*.d.ts`) are gitignored. OpenClaw loads the TypeScript
 - **Gemini embedding quota**: Free tier has daily limits. Heavy usage can exhaust the quota, blocking all memory operations until reset.
 - **Single embedding space**: All memories share one vector space — no separate spaces for different modalities or categories.
 - **Subprocess overhead**: Each memory operation spawns a Python process. Not ideal for high-frequency calls.
+- **Buffer loss on restart**: The clean message buffer is in-memory. First turn after gateway restart falls back to metadata-stripping from `agent_end` messages.
 
 ## Requirements
 
 - Python 3.13+ with [forked memU](https://github.com/murasame-desu-ai/memU) installed
 - Node.js / TypeScript (for building the plugin)
-- OpenClaw with plugin SDK
+- OpenClaw 2026.3.2+ (for `session_start`/`session_end`/`before_message_write` hooks)
 
 ## License
 
